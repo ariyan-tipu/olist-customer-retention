@@ -1,0 +1,161 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      # Pinned so the lint gate cannot drift from the locally verified run.
+      # The same version is pinned in pyproject's dev extra, so installing
+      # the dev dependencies cannot produce a formatter that disagrees.
+      - run: pip install "ruff==0.15.22"
+      - run: ruff check src tests
+      # Whole repository, not just src and tests: the analysis scripts and
+      # the notebook are read by people too.
+      - run: ruff format --check .
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install -e ".[dev]"
+      - run: pytest
+
+  # Survival statistics on synthetic data with planted effects: R fits the
+  # models, a gate asserts the known effect directions were recovered, and
+  # Octave re-derives the Weibull fit from the raw likelihood.
+  stats:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+      - run: pip install -e ".[spark,data]"
+      - name: Build synthetic data and run the pipeline
+        run: |
+          olist-retention synthetic --customers 800 --seed 7
+          olist-retention pipeline
+      - name: Ensure the survival package is present
+        run: Rscript -e 'if (!requireNamespace("survival", quietly = TRUE)) install.packages("survival", repos = "https://cloud.r-project.org")'
+      - name: Run the R survival analysis
+        run: Rscript analysis/r/survival_analysis.R outputs/survival/survival_dataset.csv outputs/survival
+      - name: Assert the planted effects were recovered
+        run: python .github/scripts/check_planted_effects.py
+      - name: Install GNU Octave
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends octave
+      - name: Cross-check the Weibull fit by direct MLE in Octave
+        run: octave --no-gui --eval "run('analysis/matlab/weibull_mle_check.m')"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: survival-outputs
+          path: outputs/survival/
+          retention-days: 14
+
+  notebook:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install -e ".[dev]"
+      - name: Execute the notebook against synthetic data
+        run: |
+          olist-retention synthetic --customers 400 --seed 7
+          jupyter nbconvert --to notebook --execute notebooks/01_exploration.ipynb \
+            --output executed.ipynb --output-dir "${RUNNER_TEMP}"
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Train a model on synthetic data
+        run: |
+          pip install -e ".[spark,data]"
+          olist-retention synthetic --customers 400 --seed 7
+          olist-retention pipeline --skip-validation
+          olist-retention train
+      - name: Build the scoring image
+        run: docker build -t olist-scoring .
+      - name: Boot the service with the model mounted
+        run: |
+          docker run -d --name scoring -p 8000:8000 \
+            -v "${PWD}/models:/models:ro" olist-scoring
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/readyz > /dev/null 2>&1; then
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8000/readyz
+      - name: Score a request end to end
+        run: |
+          response=$(curl -fsS -X POST http://127.0.0.1:8000/v1/score \
+            -H "Content-Type: application/json" \
+            -d '{"customers": [{"recency_days": 30, "frequency": 2, "avg_review_score": 5}]}')
+          echo "${response}"
+          python - "$response" <<'EOF'
+          import json, sys
+          payload = json.loads(sys.argv[1])
+          probability = payload["scores"][0]["repeat_probability"]
+          assert 0.0 <= probability <= 1.0, probability
+          print("service scored OK:", probability)
+          EOF
+      - name: Show service logs on failure
+        if: failure()
+        run: docker logs scoring || true

@@ -1,0 +1,16 @@
+.git
+.venv
+.pytest_cache
+.ruff_cache
+__pycache__
+data
+models
+outputs
+notebooks
+analysis
+docs
+sql
+tests
+.github
+*.md
+!README.md

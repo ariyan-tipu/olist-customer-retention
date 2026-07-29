@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Data and derived artefacts (fetched or produced locally, never committed).
+# Anchored to the repository root so the package's own data/ and models/
+# modules stay tracked.
+/data/
+/models/
+/outputs/
+
+# Editors and local tooling
+.idea/
+.vscode/
+.DS_Store
+
+# R and MATLAB scratch
+.Rhistory
+.RData
+.Rproj.user/
+*.asv
+octave-workspace

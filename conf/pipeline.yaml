@@ -1,0 +1,48 @@
+# Central configuration for the retention pipeline.
+# All paths are relative to the repository root and resolved at load time.
+
+data:
+  raw_dir: data/raw
+  staging_dir: data/staging
+  features_dir: data/features
+  outputs_dir: outputs
+  kaggle_handle: olistbr/brazilian-ecommerce
+
+spark:
+  # local[2] keeps the job comfortably inside a laptop's thermal budget.
+  # On Databricks the master is ignored and the cluster manager takes over.
+  master: local[2]
+  driver_memory: 2g
+  # The default of 200 shuffle partitions is tuned for cluster-scale data.
+  # For ~100k orders it creates hundreds of tiny tasks whose scheduling
+  # overhead dominates, so we size partitions to the data instead.
+  shuffle_partitions: 16
+  app_name: olist-retention
+
+labelling:
+  # Features are built strictly from history up to the cutoff; the label is
+  # any further purchase inside the horizon after it. Two cutoffs give a
+  # proper out-of-time evaluation rather than a random split of one snapshot.
+  train_cutoff: 2018-01-01
+  test_cutoff: 2018-04-01
+  horizon_days: 180
+
+survival:
+  # Last purchase timestamp present in the dataset drop. Customers with no
+  # second purchase by this date are right-censored, not treated as churned.
+  observation_end: 2018-10-17
+
+modelling:
+  seed: 42
+  cv_folds: 5
+  model_dir: models
+
+ab_test:
+  alpha: 0.05
+  target_power: 0.8
+  relative_uplifts: [0.05, 0.10, 0.15, 0.20]
+  simulations: 20000
+  simulation_seed: 42
+
+service:
+  model_path: models/churn_model.joblib

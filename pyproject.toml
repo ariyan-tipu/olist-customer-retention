@@ -1,0 +1,83 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "olist-retention"
+version = "0.1.0"
+description = "Customer retention on the Olist e-commerce dataset: Spark features, churn models, survival analysis and A/B test design"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+authors = [{ name = "Ariyan Mohammed Tipu", email = "ariyantipu39@gmail.com" }]
+keywords = ["churn", "retention", "survival-analysis", "pyspark", "e-commerce"]
+
+# Core stays lean on purpose: the scoring service image installs
+# [service] and must not drag PySpark along with it. Spark, the Kaggle
+# client and the dev tooling are opt-in extras.
+dependencies = [
+  "pandas>=2.2,<4",
+  "numpy>=1.26",
+  "scipy>=1.13",
+  "scikit-learn>=1.5,<2",
+  "pyarrow>=17",
+  "matplotlib>=3.9",
+  "pyyaml>=6.0",
+  "joblib>=1.4",
+]
+
+[project.optional-dependencies]
+spark = ["pyspark>=4.0,<4.3"]
+data = ["kagglehub>=0.3"]
+service = ["fastapi>=0.115", "uvicorn>=0.30", "pydantic>=2.8"]
+dev = [
+  "olist-retention[spark,data,service]",
+  "pytest>=8.2",
+  "ruff==0.15.22",  # must match .github/workflows/ci.yml
+  "httpx>=0.27",
+  "statsmodels>=0.14",
+  "nbformat>=5.10",
+  "nbclient>=0.10",
+  "nbconvert>=7.16",
+  "ipykernel>=6.29",
+]
+
+[project.scripts]
+olist-retention = "olist_retention.cli:main"
+
+[project.urls]
+Repository = "https://github.com/ariyan-tipu/olist-customer-retention"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/olist_retention"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM"]
+
+[tool.ruff.lint.isort]
+# Declared explicitly so import grouping cannot depend on filesystem
+# inference, which differs between checkouts.
+known-first-party = ["olist_retention", "tests"]
+
+[tool.ruff.lint.per-file-ignores]
+# The handcrafted dataset reads like a table; keeping one order per line
+# beats wrapping timestamps across lines.
+"tests/mini_data.py" = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+markers = [
+  "spark: starts a local Spark session (slower, needs a JDK)",
+]
+filterwarnings = [
+  "ignore::DeprecationWarning:pyspark.*",
+  "ignore:PySpark does not yet fully support pandas:FutureWarning",
+  # joblib artefact loading trips a numpy 2.5 deprecation internally.
+  "ignore:Setting the shape on a NumPy array:DeprecationWarning",
+]
