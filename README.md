@@ -8,9 +8,12 @@ Brazilian e-commerce dataset: 99,441 real orders across nine relational
 tables, with all the mess that implies. The pipeline is PySpark, the
 models are scikit-learn, the statistics engine is R's `survival`
 package, MATLAB re-derives the key fit from the raw likelihood as a
-validation step, and the trained model ships behind a FastAPI service in
-Docker. Everything runs on a laptop for nothing, and the identical code
-is Databricks-ready.
+validation step, and the repository includes a Dockerised FastAPI
+scoring service. Everything runs on a laptop for nothing. Paths are
+configuration rather than constants, so the same jobs are structured to
+run against Databricks volumes or S3 prefixes; that route is written up
+in [docs/databricks.md](docs/databricks.md) and has not been executed on
+a cluster.
 
 The data does not cooperate, and the write-ups say so: a repeat-purchase
 base rate near one percent, 98% censoring, and an experiment that turns
@@ -36,8 +39,9 @@ The holdout base rate is 0.975% (64,089 customers), so a PR-AUC of
 captures 20 to 24% of all repeaters at twice the background rate. The
 selection rule (cross-validated average precision) picks the logistic
 regression even though gradient boosting wins ROC-AUC on the holdout; the
-disagreement between the two metrics at this imbalance is discussed in the
-design notes below. On customers the training snapshot had never seen, lift
+disagreement between the two metrics at this imbalance is discussed in
+[docs/design-notes.md](docs/design-notes.md). On customers the training
+snapshot had never seen, lift
 drops to 1.61x and that is reported too.
 
 ![Precision-recall on the out-of-time holdout, with the no-skill base rate marked](docs/images/pr_curve.png)
@@ -53,16 +57,13 @@ at the top of the ranked list, which is the only part anyone acts on.
 Average precision asks the question the marketing team actually has. This
 is why the metric had to be chosen before it could be shopped for.
 
-A word on the selection rule, because "we chose the metric first" is the
-kind of claim that is easy to make afterwards. The rule lives in
+The rule lives in
 [`models/train.py`](src/olist_retention/models/train.py): cross-validation
 runs on the training snapshot only, the winner is chosen on its mean
 average precision, and the out-of-time snapshot is loaded afterwards purely
-to score the model already picked. That structure is what enforces the
-order, and it is worth being straight that it is the only evidence here.
-There is no timestamped record proving the metric was fixed before the
-holdout was ever examined, so read it as a design that makes the mistake
-hard to make, not as an audited pre-registration.
+to score the model already picked. That structure is the only evidence for
+the ordering, since nothing here is a timestamped pre-registration, and
+[docs/design-notes.md](docs/design-notes.md) says so at more length.
 
 **Survival analysis** ([full write-up](docs/survival-analysis.md)):
 93,350 spells from first delivery to next purchase, 98.1% right-censored.
@@ -105,10 +106,9 @@ flowchart LR
 
 The storage layout is a small medallion lake: raw CSVs with a
 provenance manifest, validated typed parquet, then gold feature
-snapshots partitioned by cutoff date. Paths are configuration, so the
-same jobs run against local directories, Databricks volumes or S3
-prefixes; [docs/databricks.md](docs/databricks.md) is the step-by-step
-cloud story, including the free-tier route.
+snapshots partitioned by cutoff date. Every path is configuration, which
+is what makes the local and cloud layouts the same code; the cloud route,
+including the free-tier one, is in [docs/databricks.md](docs/databricks.md).
 
 ```
 conf/pipeline.yaml        every knob in one typed, validated file
@@ -167,72 +167,43 @@ runtime (`docker build -t olist-scoring .` then
 `docker run -p 8000:8000 -v "$PWD/models:/models:ro" olist-scoring`);
 CI builds, boots and scores against it on every push.
 
-## Design notes
+## Four decisions that shaped the result
 
-**The identity trap.** Olist issues a fresh `customer_id` per order;
-the person is `customer_unique_id`. Joining on the wrong one silently
-turns customer analysis into order analysis. The grain is asserted in
-schema docs, enforced in validation and pinned by tests.
+Fuller reasoning for each, plus the Spark tuning and the SQL test
+strategy, is in [docs/design-notes.md](docs/design-notes.md).
 
-**Point-in-time discipline.** Features at a cutoff may only use what
-was knowable then: purchases count once placed, but delivery features
-require the parcel to have arrived by the cutoff and review features
-require the review to have been written. A handcrafted seven-customer
-dataset pins each rule, including a customer whose order was in transit
-across the cutoff. The same tests caught a real bug: naive datetime
-literals crossed a British daylight-saving change and shifted every
-boundary by an hour, which a UTC-only CI machine would never have seen.
-Timestamp literals are now rendered as strings and parsed in the
-session's pinned UTC timezone.
+**The identity trap.** Olist issues a fresh `customer_id` per order; the
+person is `customer_unique_id`. Joining on the wrong one silently turns
+customer analysis into order analysis. The grain is asserted in schema
+docs, enforced in validation and pinned by tests.
 
-**Spark decisions, made for reasons.** The products and category
-dimensions are explicitly broadcast, turning the basket join into a
-map-side hash join with no shuffle of the item rows. Shuffle
-partitions are set to 16, not the 200 default, because at 100k orders
-the default creates hundreds of near-empty tasks whose scheduling
-overhead dominates. The reused purchase spine is cached once,
-deliberately, and everything else stays lazy so Spark can collapse the
-plan. Snapshots are written as single parquet files because partitioning
-below a few million rows is bookkeeping, not performance.
+**Point-in-time discipline.** Features at a cutoff may only use what was
+knowable then: a purchase counts once placed, a delivery feature only once
+the parcel has arrived, a review feature only once it is written. A
+handcrafted seven-customer dataset pins each rule, including an order in
+transit across the cutoff. Those tests caught a real bug: naive datetime
+literals crossed a British daylight-saving change and moved every boundary
+by an hour, which a UTC-only CI machine would never have seen.
 
-**Evaluation under a 1% base rate.** With a 0.975% base rate, ROC-AUC
-flatters: the gradient booster "wins" ROC while losing average
-precision, which is the metric aligned with actually targeting anyone.
-Selection runs on cross-validated average precision over the training
-snapshot, and the holdout is only loaded afterwards to score the winner.
-Class weighting makes the scores rank well but destroys calibration, so
-the service's outputs are treated as rankings; recalibration on a held-out
-slice is the stated next step before anyone reads them as probabilities.
+**Ranking, not probability.** Class weighting makes the scores rank well
+and destroys calibration, so the service's outputs are treated as rankings
+and recalibration is the stated next step.
 
 ![Calibration by decile: predicted probabilities cluster between 0.25 and 0.65 while the observed repeat rate stays near 0.02](docs/images/calibration.png)
 
-The gap between that curve and the diagonal is the whole point. Class
-weighting pushed predicted probabilities into the 0.25 to 0.65 range while
-the observed repeat rate never leaves about 2%, so the numbers order
-customers correctly and mean nothing as probabilities. A model that is
-useful and badly calibrated at the same time is normal; quoting its output
-as "a 60% chance of repurchase" would not be.
-
-The out-of-time evaluation also surfaces genuine drift: the base rate moves
-from 1.286% to 0.975% between cutoffs, which is production reality rather
-than an inconvenience.
+The gap between that curve and the diagonal is the point: predicted
+probabilities sit between 0.25 and 0.65 while the observed repeat rate never
+leaves about 2%. The numbers order customers correctly and mean nothing as
+probabilities, so quoting one as "a 60% chance of repurchase" would be wrong
+in a way the lift figures are not.
 
 ![Permutation importance on the holdout](docs/images/permutation_importance.png)
 
-Permutation importance is measured on the holdout rather than in-sample, so
-it reports what actually carried signal out of time.
-
-**Censoring is not churn.** 98.1% of survival spells are censored. The
-write-up spells out why deleting or mislabelling those customers wrecks
-every estimate, and the CI stats job proves the machinery end to end:
-the synthetic generator plants known effects (late delivery and bad
-reviews stretch the time to the next purchase), R must recover both
-directions significantly, and Octave must reproduce R's fit from the
-raw likelihood, on every push.
-
-**SQL that is proven, not decorative.** The Databricks SQL views in
-`sql/` execute against Spark temporary views inside the test suite, so
-a broken view fails the build rather than a dashboard.
+**Censoring is not churn.** 98.1% of survival spells are censored, and
+deleting or mislabelling those customers wrecks every estimate. The CI stats
+job proves the machinery end to end: the synthetic generator plants known
+effects, R must recover both directions significantly, and Octave must
+reproduce R's fit from the raw likelihood, on every push.
 
 ## Continuous integration
 
