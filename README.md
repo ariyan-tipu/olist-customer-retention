@@ -25,10 +25,10 @@ charged: **<http://35.178.111.113/readyz>**, with
 [docs/deployment-aws.md](docs/deployment-aws.md) covering what that means
 and how to take it down. Paths are configuration rather than constants,
 so the same jobs run against a Databricks volume or an S3 prefix without
-a code change, and
-[notebooks/databricks/01_pipeline_on_databricks.py](notebooks/databricks/01_pipeline_on_databricks.py)
-checks that claim by comparing what a cluster produces against what the
-laptop produced.
+a code change. That claim has been checked rather than asserted: the
+pipeline was executed on a Databricks serverless cluster and every
+figure matched the laptop, recorded in
+[results/databricks_run.json](results/databricks_run.json).
 
 ## Results at a glance
 

@@ -12,6 +12,40 @@ notebook at
 ends by comparing what the cluster produced against the figures measured
 locally. If a row count or a base rate moved, it prints the mismatch.
 
+## It has been run, and it matched
+
+Executed on Databricks Free Edition serverless compute on 2026-08-07.
+All eight figures came back identical to the laptop run, and
+[`results/databricks_run.json`](../results/databricks_run.json) carries
+the full record.
+
+| Figure | Laptop | Cluster |
+| --- | --- | --- |
+| Staged orders | 99,441 | 99,441 |
+| Survival spells | 93,350 | 93,350 |
+| Survival events | 1,808 | 1,808 |
+| Train customers | 43,768 | 43,768 |
+| Test customers | 64,089 | 64,089 |
+| Train base rate | 1.286% | 1.286% |
+| Test base rate | 0.975% | 0.975% |
+| Censoring rate | 98.1% | 98.1% |
+
+All five SQL views built and returned rows. The regional summary splits
+the test cohort into five regions that sum to 64,089, which is the test
+snapshot exactly, so the view agrees with the snapshot it reads from.
+
+Two platform differences turned up, and both are the interesting part of
+the exercise:
+
+* Serverless compute rejects `PERSIST TABLE` outright. Caching in this
+  pipeline only ever changed how long a job took, so `maybe_cache` now
+  asks, accepts a refusal and logs it. The numbers above were produced
+  with no caching at all, which is the proof that it was an optimisation.
+* The managed session does not default to UTC. Since every cutoff is a
+  timestamp literal parsed in the session timezone, the pipeline pins it.
+  Without that pin the boundaries would have moved and this table would
+  not have matched.
+
 | Layer  | Contents                                  | Local default   | Cloud example                 |
 | ------ | ----------------------------------------- | --------------- | ----------------------------- |
 | Bronze | raw Olist CSVs plus provenance manifest   | `data/raw`      | `s3://<bucket>/olist/raw`     |

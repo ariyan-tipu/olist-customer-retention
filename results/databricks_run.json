@@ -1,0 +1,65 @@
+{
+  "ran_on": "Databricks Free Edition, serverless compute, environment version 5",
+  "ran_at_utc": "2026-08-07T23:39:00Z",
+  "python_version": "3.12",
+  "session_timezone": "UTC",
+  "storage": "/Volumes/workspace/default/olist",
+  "spark_client": "pyspark.sql.connect (Spark Connect)",
+  "install": "pip install from git, no wheel built or uploaded",
+  "note": "Cluster figures compared against the laptop run recorded in the README. Every figure matched.",
+  "expected_from_local_run": {
+    "staged_orders": 99441,
+    "survival_spells": 93350,
+    "survival_events": 1808,
+    "train_customers": 43768,
+    "test_customers": 64089,
+    "train_base_rate": 0.01286,
+    "test_base_rate": 0.00975,
+    "censoring_rate": 0.981
+  },
+  "measured_on_databricks": {
+    "staged_orders": 99441,
+    "survival_spells": 93350,
+    "survival_events": 1808,
+    "train_customers": 43768,
+    "test_customers": 64089,
+    "train_base_rate": 0.01286,
+    "test_base_rate": 0.00975,
+    "censoring_rate": 0.981
+  },
+  "all_match": true,
+  "validation_checks_reproduced": {
+    "customers_rows": 99441,
+    "orders_rows": 99441,
+    "order_items_rows": 112650,
+    "order_payments_rows": 103886,
+    "order_reviews_rows": 99224,
+    "products_rows": 32951,
+    "sellers_rows": 3095,
+    "geolocation_rows": 1000163,
+    "category_translation_rows": 71,
+    "orders_with_multiple_reviews": 547,
+    "delivered_orders_missing_delivery_date": 8,
+    "orphaned_foreign_keys": 0
+  },
+  "sql_views_created": [
+    "v_orders_enriched",
+    "v_monthly_cohort_retention",
+    "v_delivery_performance_monthly",
+    "v_repeat_by_first_review",
+    "v_feature_summary_by_region"
+  ],
+  "feature_summary_by_region": [
+    {"customer_region": "sudeste", "customers": 43265, "repeat_rate": 0.0105, "avg_monetary_total": 155.26, "avg_late_delivery_rate": 0.0549, "avg_review_score": 4.078},
+    {"customer_region": "sul", "customers": 9438, "repeat_rate": 0.0087, "avg_monetary_total": 162.12, "avg_late_delivery_rate": 0.0581, "avg_review_score": 4.094},
+    {"customer_region": "nordeste", "customers": 6320, "repeat_rate": 0.0068, "avg_monetary_total": 202.32, "avg_late_delivery_rate": 0.1061, "avg_review_score": 3.878},
+    {"customer_region": "centro_oeste", "customers": 3777, "repeat_rate": 0.0093, "avg_monetary_total": 178.8, "avg_late_delivery_rate": 0.0515, "avg_review_score": 4.041},
+    {"customer_region": "norte", "customers": 1289, "repeat_rate": 0.0085, "avg_monetary_total": 225.13, "avg_late_delivery_rate": 0.0525, "avg_review_score": 4.034}
+  ],
+  "regional_customers_sum": 64089,
+  "regional_sum_matches_test_snapshot": true,
+  "platform_differences_encountered": [
+    "Serverless compute rejects PERSIST TABLE with NOT_SUPPORTED_WITH_SERVERLESS, so the two cache calls fall back to running uncached and log that they did. Output is unchanged.",
+    "The managed session does not default to UTC, so build_spark_session pins it. Without that pin the cutoff literals would move and these figures would not have matched."
+  ]
+}
