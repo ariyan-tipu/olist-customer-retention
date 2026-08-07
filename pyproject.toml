@@ -80,6 +80,10 @@ known-first-party = ["olist_retention", "tests"]
 # The handcrafted dataset reads like a table; keeping one order per line
 # beats wrapping timestamps across lines.
 "tests/mini_data.py" = ["E501"]
+# Databricks notebooks run cell by cell. The runtime injects `dbutils`
+# and `display`, and each import belongs beside the cell that uses it,
+# so a reader running one cell gets what that cell needs.
+"notebooks/databricks/*.py" = ["E402", "F821"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

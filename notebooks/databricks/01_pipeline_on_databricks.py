@@ -17,7 +17,17 @@
 
 # COMMAND ----------
 
-# MAGIC %pip install "olist-retention[spark,data] @ git+https://github.com/ariyan-tipu/olist-customer-retention@main"
+# MAGIC %pip install "olist-retention[data] @ git+https://github.com/ariyan-tipu/olist-customer-retention@main"
+
+# COMMAND ----------
+
+# MAGIC %md
+# MAGIC The `spark` extra is deliberately left out. It pins a pyspark version,
+# MAGIC and the runtime already supplies its own Spark; installing another over
+# MAGIC the top is the documented way to break the session on serverless
+# MAGIC compute. The runtime's Spark is the one this should be running against
+# MAGIC anyway, since the point of the exercise is that the code does not care
+# MAGIC which it gets.
 
 # COMMAND ----------
 
