@@ -20,7 +20,7 @@ as what the data supports rather than worked around. The most useful
 finding is a negative one, and it is in the table below.
 
 Everything needed to reproduce the results runs on a laptop for nothing.
-The deployment runs on an AWS Free plan account, which cannot be charged;
+The deployment targets an AWS Free plan account, which cannot be charged;
 [docs/deployment-aws.md](docs/deployment-aws.md) covers what that means
 and how to take it down. Paths are configuration rather than constants,
 so the same jobs run against a Databricks volume or an S3 prefix without
@@ -253,11 +253,11 @@ curl -s http://127.0.0.1:8000/metrics         # the same, for a Prometheus scrap
 ```
 
 The `/metrics` endpoint speaks the Prometheus text format because it is
-the one every monitoring stack can already read. On the deployed
-instance, seven of those numbers also reach CloudWatch once a minute,
-which is where an alarm would hang if this were carrying real customers.
-Seven is a deliberate ceiling: ten custom metrics are free indefinitely,
-so the monitoring cannot turn into a bill.
+the one every monitoring stack can already read. On an instance deployed
+by `deploy/aws/bootstrap.py`, seven of those numbers also reach
+CloudWatch once a minute, which is where an alarm would hang if this were
+carrying real customers. Seven is a deliberate ceiling: ten custom
+metrics are free indefinitely, so the monitoring cannot turn into a bill.
 
 **Capacity.** [`scripts/loadtest.py`](scripts/loadtest.py) drives the
 service with concurrent clients and reports throughput with the latency
@@ -347,15 +347,17 @@ next steps.
 The deployment has limits worth stating plainly. It is one instance in
 one availability zone serving plain HTTP, with no autoscaling and no
 failover, sized for a demonstration and for measuring capacity. It has no
-real users, so the drift monitor is watching synthetic traffic; what has
+real users, so the drift monitor is watching generated traffic; what has
 been proved is that it detects a shift when one is present, which the
-test suite pins by moving a feature and checking the index reports it.
-Making this carry real customers would mean TLS behind a domain, more
-than one instance, and an alarm on the drift metric wired to a retraining
-job. Each of those is an addition to this design rather than a rewrite,
-and each also costs money, which is where the free tier stops.
+test suite pins by moving a feature and checking the index reports it,
+and which [results/serving-capacity.md](results/serving-capacity.md)
+records happening for real. Making this carry real customers would mean
+TLS behind a domain, more than one instance, and an alarm on the drift
+metric wired to a retraining job. Each of those is an addition to this
+design rather than a rewrite, and each also costs money, which is where
+the free tier stops.
 
-The account itself is on the AWS Free plan, which closes rather than
-bills when its credits run out or six months pass. The measurements in
-this repository outlive it deliberately, so the claims stay checkable
-after the address stops answering.
+The AWS account is on the Free plan, which closes rather than bills when
+its credits run out or six months pass. Measurements taken from it are
+committed here for that reason, so the claims stay checkable after the
+address stops answering.
