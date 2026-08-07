@@ -145,6 +145,13 @@ TABLES = (
 for name in TABLES:
     spark.read.parquet(str(data.staging_dir / name)).createOrReplaceTempView(name)
 
+# The last view summarises the model's feature snapshot, so that has to be
+# registered too. The test fixture registers exactly the same set, which is
+# what lets one SQL file serve both.
+spark.read.parquet(
+    str(data.features_dir / f"cutoff={TEST_CUTOFF.isoformat()}")
+).createOrReplaceTempView("customer_features")
+
 import olist_retention
 
 sql_path = Path(olist_retention.__file__).parents[2] / "sql" / "feature_views.sql"
@@ -160,10 +167,28 @@ if not sql_path.is_file():
 else:
     sql_text = sql_path.read_text(encoding="utf-8")
 
-for statement in [part.strip() for part in sql_text.split(";") if part.strip()]:
-    spark.sql(statement)
+VIEW_NAMES = (
+    "v_orders_enriched",
+    "v_monthly_cohort_retention",
+    "v_delivery_performance_monthly",
+    "v_repeat_by_first_review",
+    "v_feature_summary_by_region",
+)
 
-display(spark.sql("SELECT * FROM customer_order_features LIMIT 10"))
+executed = 0
+for statement in sql_text.split(";"):
+    # A chunk can open with comment lines and still be a real statement,
+    # so the comments are stripped before deciding whether anything is
+    # left to run. This mirrors the test fixture exactly.
+    body = "\n".join(
+        line for line in statement.splitlines() if not line.strip().startswith("--")
+    ).strip()
+    if body:
+        spark.sql(statement)
+        executed += 1
+
+print(f"created {executed} views: {', '.join(VIEW_NAMES)}")
+display(spark.sql("SELECT * FROM v_feature_summary_by_region"))
 
 # COMMAND ----------
 

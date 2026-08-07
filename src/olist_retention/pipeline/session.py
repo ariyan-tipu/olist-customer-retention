@@ -55,7 +55,11 @@ def maybe_cache(frame: DataFrame) -> DataFrame:
     try:
         return frame.cache()
     except Exception as error:  # noqa: BLE001 - the type varies by runtime
-        logger.info("Caching is unavailable on this runtime, continuing without it: %s", error)
+        # First line only. Spark Connect attaches the whole JVM stack to
+        # the message, and eighty lines of it three times a run buries
+        # the output somebody is actually reading.
+        reason = str(error).strip().splitlines()[0]
+        logger.info("Caching is unavailable on this runtime, continuing without it: %s", reason)
         return frame
 
 
