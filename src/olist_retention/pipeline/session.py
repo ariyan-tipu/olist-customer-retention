@@ -12,7 +12,7 @@ from __future__ import annotations
 import os
 from datetime import datetime
 
-from pyspark.sql import Column, SparkSession
+from pyspark.sql import Column, DataFrame, SparkSession
 from pyspark.sql import functions as F
 
 from olist_retention.config import SparkConfig
@@ -37,6 +37,26 @@ def timestamp_literal(value: datetime) -> Column:
 
 def on_databricks() -> bool:
     return "DATABRICKS_RUNTIME_VERSION" in os.environ
+
+
+def maybe_cache(frame: DataFrame) -> DataFrame:
+    """Cache where the platform offers it, and carry on where it does not.
+
+    Caching in this pipeline is an optimisation. A reused spine is
+    materialised once so that the aggregates built on top of it do not
+    re-read and re-join the staged tables every time an action fires. It
+    changes how long a job takes and never what the job produces.
+
+    Databricks serverless compute refuses the request outright with
+    NOT_SUPPORTED_WITH_SERVERLESS, because it manages caching itself.
+    Falling over there would be a portability bug rather than a real
+    failure, so this asks, accepts the answer and says which it got.
+    """
+    try:
+        return frame.cache()
+    except Exception as error:  # noqa: BLE001 - the type varies by runtime
+        logger.info("Caching is unavailable on this runtime, continuing without it: %s", error)
+        return frame
 
 
 def build_spark_session(config: SparkConfig) -> SparkSession:

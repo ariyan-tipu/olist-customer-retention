@@ -47,7 +47,7 @@ from olist_retention.feature_names import (
 )
 from olist_retention.logging_utils import get_logger
 from olist_retention.pipeline.geo import region_for
-from olist_retention.pipeline.session import timestamp_literal
+from olist_retention.pipeline.session import maybe_cache, timestamp_literal
 from olist_retention.pipeline.staging import read_staged
 
 logger = get_logger(__name__)
@@ -123,7 +123,7 @@ class FeatureBuilder:
         # The spine is reused by every aggregate below, so one deliberate
         # materialisation avoids re-reading and re-joining staged tables
         # each time an action fires. Everything else stays lazy.
-        purchases = self._purchases_before_cutoff(orders).cache()
+        purchases = maybe_cache(self._purchases_before_cutoff(orders))
 
         spine = purchases.select(ID_COLUMN).distinct()
         rfm = self._rfm(purchases)

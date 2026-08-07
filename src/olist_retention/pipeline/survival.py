@@ -36,7 +36,7 @@ from olist_retention.config import DataConfig
 from olist_retention.feature_names import ID_COLUMN
 from olist_retention.logging_utils import get_logger
 from olist_retention.pipeline.geo import region_for
-from olist_retention.pipeline.session import timestamp_literal
+from olist_retention.pipeline.session import maybe_cache, timestamp_literal
 from olist_retention.pipeline.staging import read_staged
 
 logger = get_logger(__name__)
@@ -82,7 +82,7 @@ class SurvivalDatasetBuilder:
         self.observation_end = observation_end
 
     def run(self) -> tuple[Path, SurvivalMetadata]:
-        spells = self.build().cache()
+        spells = maybe_cache(self.build())
 
         stats = spells.agg(
             F.count("*").alias("n"),

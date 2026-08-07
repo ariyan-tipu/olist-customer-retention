@@ -40,3 +40,32 @@ def test_alpha_bounds_are_enforced():
             simulations=100,
             simulation_seed=1,
         )
+
+
+def test_caching_degrades_instead_of_failing():
+    """Serverless compute refuses PERSIST TABLE; the pipeline must not care.
+
+    Caching is an optimisation here, so a runtime that declines it should
+    cost time and nothing else. Found on Databricks serverless, where the
+    refusal is NOT_SUPPORTED_WITH_SERVERLESS.
+    """
+    from olist_retention.pipeline.session import maybe_cache
+
+    class Refuses:
+        def cache(self):
+            raise RuntimeError("[NOT_SUPPORTED_WITH_SERVERLESS] PERSIST TABLE is not supported")
+
+    frame = Refuses()
+    assert maybe_cache(frame) is frame
+
+
+def test_caching_is_used_when_it_is_offered():
+    from olist_retention.pipeline.session import maybe_cache
+
+    sentinel = object()
+
+    class Accepts:
+        def cache(self):
+            return sentinel
+
+    assert maybe_cache(Accepts()) is sentinel
