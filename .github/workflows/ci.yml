@@ -49,6 +49,37 @@ jobs:
       - run: pip install -e ".[dev]"
       - run: pytest
 
+  # The neural candidate lives in its own job because the TensorFlow
+  # wheel is a quarter of a gigabyte and the other jobs have no use for
+  # it. Keeping it separate means the main suite stays quick and a
+  # TensorFlow release that breaks the wrapper fails visibly here.
+  neural-candidate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install -e ".[dev,tf]"
+      - run: pytest tests/test_keras_mlp.py -v
+      - name: Compare all three candidates on synthetic data
+        run: |
+          olist-retention synthetic --customers 600 --seed 7
+          olist-retention pipeline --skip-validation
+          olist-retention train
+      - name: Assert the run recorded which candidates it compared
+        run: |
+          python - <<'EOF'
+          import json
+          metrics = json.load(open("outputs/models/metrics.json"))
+          compared = metrics["candidates_compared"]
+          print("compared:", compared)
+          assert "keras_mlp" in compared, compared
+          assert len(compared) == 3, compared
+          EOF
+
   # Survival statistics on synthetic data with planted effects: R fits the
   # models, a gate asserts the known effect directions were recovered, and
   # Octave re-derives the Weibull fit from the raw likelihood.

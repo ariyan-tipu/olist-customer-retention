@@ -133,6 +133,10 @@ def trained_model(synthetic_snapshots, tmp_path_factory):
         features_dir=synthetic_snapshots.features_dir,
         outputs_dir=base / "outputs",
         horizon_days=HORIZON_DAYS,
+        # The neural candidate has its own test. Leaving it out here
+        # keeps this fixture quick and its winner deterministic whether
+        # or not the optional extra happens to be installed.
+        include_keras=False,
     )
     result = trainer.run(TRAIN_CUTOFF, TEST_CUTOFF)
     return result

@@ -1,16 +1,24 @@
-"""Train, compare and persist the repeat-purchase models.
+"""Train the repeat-purchase candidates and persist the winner.
 
-Two candidates are compared on identical inputs: a regularised logistic
-regression (the baseline every later model must beat, and the one whose
-coefficients stakeholders can read) and a histogram gradient boosting
-classifier. Model selection uses stratified cross-validation on the
-training snapshot only; the reported numbers come from the later,
-out-of-time snapshot that no selection decision ever touched.
+The comparison holds the inputs fixed and varies only the learner. A
+regularised logistic regression sets the bar, since its coefficients are
+readable and anything more complicated has to earn its place against it.
+A histogram gradient boosting classifier is the standard strong baseline
+on tabular data. A small dense network on the TensorFlow backend joins
+them to test the common assumption that a neural model helps on data of
+this shape; it is optional at install time, and the metrics file records
+which candidates a given run actually compared.
 
-Both models share one preprocessor (median imputation with missingness
-indicators, scaling, one-hot encoding). Scaling is a no-op for trees but
-harmless, and a shared preprocessor keeps the comparison about the
-learner rather than the plumbing.
+Selection uses stratified cross-validation on the training snapshot
+alone. The reported numbers come from the later out-of-time snapshot,
+which no selection decision ever touched.
+
+Every candidate shares one preprocessor, so the comparison stays about
+the learner and never about the plumbing. It imputes each numeric column
+with its median while keeping an indicator of what was missing, scales,
+then one-hot encodes the two categorical columns. Scaling does nothing
+for the trees and matters a great deal for the network, which is the
+second reason the preprocessor is shared.
 """
 
 from __future__ import annotations
@@ -41,11 +49,112 @@ from olist_retention.config import ModellingConfig
 from olist_retention.feature_names import CATEGORICAL_FEATURES, NUMERIC_FEATURES
 from olist_retention.logging_utils import get_logger
 from olist_retention.models.datasets import ModelData, load_snapshot
+from olist_retention.models.keras_mlp import KerasMlpClassifier, keras_available
 from olist_retention.models.metrics import classification_metrics, save_evaluation_plots
+from olist_retention.monitoring.drift import build_reference
 
 logger = get_logger(__name__)
 
-ARTEFACT_VERSION = 1
+# Version 2 adds the reference feature distribution the scoring service
+# needs for drift monitoring. A version 1 artefact has no reference, so
+# the scorer rejects it outright instead of serving with the monitor
+# quietly switched off.
+ARTEFACT_VERSION = 2
+
+# Ascending cost to serve, declared here rather than measured, so it
+# cannot be adjusted once results are in. A logistic regression is a dot
+# product over the preprocessed row. A histogram gradient booster walks a
+# few hundred shallow trees. The network needs TensorFlow present in the
+# serving image at all, which is the largest step in the list.
+SERVING_COST_ORDER: tuple[str, ...] = (
+    "logistic_regression",
+    "gradient_boosting",
+    "keras_mlp",
+)
+
+
+@dataclass(frozen=True)
+class Selection:
+    """Which model was chosen, and the reasoning that chose it."""
+
+    winner: str
+    leader: str
+    contenders: list[str]
+    tie_break_applied: bool
+    reason: str
+
+    def as_dict(self) -> dict:
+        return {
+            "winner": self.winner,
+            "cross_validation_leader": self.leader,
+            "within_one_deviation_of_leader": self.contenders,
+            "tie_break_applied": self.tie_break_applied,
+            "reason": self.reason,
+        }
+
+
+def select_winner(cv_summary: dict[str, dict]) -> Selection:
+    """Choose the model to persist from cross-validation alone.
+
+    Primary rule, fixed before anything was scored: the highest mean
+    average precision under stratified cross-validation on the training
+    snapshot.
+
+    Tie-break, added after the first run that included all three
+    candidates: when a candidate's mean sits within one standard
+    deviation of the leader's mean, cross-validation has not told the two
+    apart, and the cheaper model to serve wins. Both inputs to that
+    decision come from the training side, and the out-of-time snapshot is
+    still untouched when it runs, so it does not amount to picking a
+    model on the test set.
+
+    The reason it exists: with a repeat rate near one percent, the
+    fold-to-fold deviation of average precision is roughly a quarter of
+    the measure itself. An argmax across candidates that close is reading
+    noise, and it will happily hand back a model that costs a great deal
+    more to run for a difference it cannot support.
+    """
+    leader = max(cv_summary, key=lambda name: cv_summary[name]["average_precision_mean"])
+    leader_mean = cv_summary[leader]["average_precision_mean"]
+    leader_deviation = cv_summary[leader]["average_precision_std"]
+
+    contenders = [
+        name
+        for name, summary in cv_summary.items()
+        if leader_mean - summary["average_precision_mean"] <= leader_deviation
+    ]
+
+    def cost_rank(name: str) -> int:
+        return (
+            SERVING_COST_ORDER.index(name)
+            if name in SERVING_COST_ORDER
+            else len(SERVING_COST_ORDER)
+        )
+
+    cheapest = min(contenders, key=cost_rank)
+    if cheapest == leader:
+        return Selection(
+            winner=leader,
+            leader=leader,
+            contenders=sorted(contenders),
+            tie_break_applied=False,
+            reason=(
+                f"{leader} leads cross-validated average precision at {leader_mean:.4f} "
+                "and is also the cheapest of the candidates within one standard deviation."
+            ),
+        )
+    return Selection(
+        winner=cheapest,
+        leader=leader,
+        contenders=sorted(contenders),
+        tie_break_applied=True,
+        reason=(
+            f"{leader} leads at {leader_mean:.4f} with a fold-to-fold deviation of "
+            f"{leader_deviation:.4f}, and {len(contenders)} candidates sit inside that "
+            f"deviation, so cross-validation does not separate them. {cheapest} is the "
+            "cheapest of those to serve and is selected on that basis."
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -85,9 +194,14 @@ def build_preprocessor() -> ColumnTransformer:
     )
 
 
-def build_candidates(seed: int) -> dict[str, Pipeline]:
-    """The two model pipelines under comparison."""
-    return {
+def build_candidates(seed: int, include_keras: bool = True) -> dict[str, Pipeline]:
+    """The model pipelines under comparison.
+
+    The neural candidate is dropped when TensorFlow is absent, and the
+    caller is told so through the returned keys, which end up written
+    into the metrics file.
+    """
+    candidates = {
         "logistic_regression": Pipeline(
             [
                 ("preprocess", build_preprocessor()),
@@ -114,6 +228,19 @@ def build_candidates(seed: int) -> dict[str, Pipeline]:
             ]
         ),
     }
+    if include_keras and keras_available():
+        candidates["keras_mlp"] = Pipeline(
+            [
+                ("preprocess", build_preprocessor()),
+                ("model", KerasMlpClassifier(random_state=seed)),
+            ]
+        )
+    elif include_keras:
+        logger.warning(
+            "TensorFlow is not installed, so the neural candidate is skipped. "
+            'Install it with pip install -e ".[tf]" to include it.'
+        )
+    return candidates
 
 
 class ChurnModelTrainer:
@@ -125,11 +252,13 @@ class ChurnModelTrainer:
         features_dir: Path,
         outputs_dir: Path,
         horizon_days: int,
+        include_keras: bool = True,
     ) -> None:
         self.modelling = modelling
         self.features_dir = features_dir
         self.outputs_dir = outputs_dir
         self.horizon_days = horizon_days
+        self.include_keras = include_keras
 
     def run(self, train_cutoff: date, test_cutoff: date) -> TrainingResult:
         train = load_snapshot(self.features_dir, train_cutoff)
@@ -142,12 +271,13 @@ class ChurnModelTrainer:
             100 * test.base_rate,
         )
 
-        candidates = build_candidates(self.modelling.seed)
+        candidates = build_candidates(self.modelling.seed, include_keras=self.include_keras)
         cv_summary = {
             name: self._cross_validate(pipeline, train) for name, pipeline in candidates.items()
         }
-        winner = max(cv_summary, key=lambda name: cv_summary[name]["average_precision_mean"])
-        logger.info("Cross-validation winner: %s", winner)
+        selection = select_winner(cv_summary)
+        winner = selection.winner
+        logger.info("Selected %s. %s", winner, selection.reason)
 
         holdout: dict[str, dict] = {}
         scores_by_model: dict[str, np.ndarray] = {}
@@ -174,7 +304,11 @@ class ChurnModelTrainer:
             "n_test": len(test),
             "train_base_rate": round(train.base_rate, 6),
             "test_base_rate": round(test.base_rate, 6),
+            # Written down so a reader can tell whether a given run had
+            # the optional neural candidate available to it.
+            "candidates_compared": sorted(candidates),
             "cross_validation": cv_summary,
+            "selection": selection.as_dict(),
             "holdout": holdout,
             "holdout_strict_new_customers": strict,
             "winner": winner,
@@ -194,7 +328,15 @@ class ChurnModelTrainer:
             "horizon_days": self.horizon_days,
             "numeric_features": list(NUMERIC_FEATURES),
             "categorical_features": list(CATEGORICAL_FEATURES),
+            "candidates_compared": sorted(candidates),
+            "selection": selection.as_dict(),
             "holdout_metrics": holdout[winner],
+            # The drift monitor's baseline is cut from the same rows the
+            # winner was fitted on, and travels with it, so the two can
+            # never be paired up wrongly at deploy time.
+            "reference_distribution": build_reference(
+                train.X, NUMERIC_FEATURES, CATEGORICAL_FEATURES
+            ),
         }
         model_path = model_dir / "churn_model.joblib"
         joblib.dump({"pipeline": candidates[winner], "model_card": model_card}, model_path)

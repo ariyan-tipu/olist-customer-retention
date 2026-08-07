@@ -1,106 +1,82 @@
 # Running the pipeline on Databricks
 
-The pipeline is written so that the laptop run and the cloud run are the
-same code with different configuration. `build_spark_session` attaches to
-the Databricks-managed session when it detects the runtime and only
-builds its own local session otherwise, and every read and write goes
-through paths taken from `conf/pipeline.yaml`, so pointing the pipeline
-at cloud storage is a configuration change, not a code change.
+The laptop run and the cluster run are the same code with different
+configuration. `build_spark_session` attaches to the Databricks-managed
+session when it detects the runtime, every read and write goes through
+paths taken from `conf/pipeline.yaml`, and pointing the pipeline at
+cloud storage is therefore a configuration change.
 
-The layout maps onto the usual medallion layering:
+That is a claim, and a claim in a README is worth little, so the
+notebook at
+[`notebooks/databricks/01_pipeline_on_databricks.py`](../notebooks/databricks/01_pipeline_on_databricks.py)
+ends by comparing what the cluster produced against the figures measured
+locally. If a row count or a base rate moved, it prints the mismatch.
 
-| Layer  | Contents                                   | Local default    | Cloud example                   |
-| ------ | ------------------------------------------ | ---------------- | ------------------------------- |
-| Bronze | raw Olist CSVs plus provenance manifest    | `data/raw`       | `s3://<bucket>/olist/raw`       |
-| Silver | typed, validated parquet per table         | `data/staging`   | `s3://<bucket>/olist/staging`   |
-| Gold   | feature snapshots and the survival export  | `data/features`  | `s3://<bucket>/olist/features`  |
+| Layer  | Contents                                  | Local default   | Cloud example                 |
+| ------ | ----------------------------------------- | --------------- | ----------------------------- |
+| Bronze | raw Olist CSVs plus provenance manifest   | `data/raw`      | `s3://<bucket>/olist/raw`     |
+| Silver | typed, validated parquet per table        | `data/staging`  | `s3://<bucket>/olist/staging` |
+| Gold   | feature snapshots and the survival export | `data/features` | `s3://<bucket>/olist/features` |
 
-## Free Edition walkthrough (no card required)
+## Free Edition walkthrough
 
-Databricks Free Edition gives a serverless workspace at no cost, which
-keeps this project's zero-cost rule intact. Storage there is a managed
-Unity Catalog volume rather than your own S3 bucket; the S3 story below
-is identical apart from the path prefix.
+Databricks Free Edition gives a serverless workspace at no cost and asks
+for no card, which keeps the project's zero-cost rule intact. Storage is
+a managed Unity Catalog volume; on a workspace with its own bucket the
+only difference is the path prefix.
 
-1. Sign up at databricks.com for Free Edition and create a workspace.
-2. Create a volume for the project, for example
+1. Sign up for Free Edition and let it create a workspace.
+2. Open Catalog, expand the `workspace` catalog and the `default` schema,
+   then create a volume named `olist`. The path comes out as
    `/Volumes/workspace/default/olist`.
-3. Upload the nine raw CSVs to `<volume>/raw` (download them locally
-   first with `olist-retention download`, or run the downloader in a
-   notebook cell).
-4. Build the wheel locally and upload it, then install it in a notebook:
+3. Import `notebooks/databricks/01_pipeline_on_databricks.py`. Databricks
+   reads that source format directly, so the file stays reviewable in a
+   pull request instead of arriving as a wall of JSON.
+4. Run the cells in order. The first installs the package straight from
+   GitHub, so there is no wheel to build or upload.
 
-   ```
-   py -m build --wheel
-   %pip install /Volumes/workspace/default/olist/olist_retention-0.1.0-py3-none-any.whl
-   ```
+The notebook stages the nine raw tables, builds both feature snapshots
+and the survival export, registers the staged parquet as temporary views
+and executes `sql/feature_views.sql` unchanged. That file is the same one
+the test suite runs against a local Spark session, which is why the SQL
+lives in a file rather than inside a Python string.
 
-5. Point the configuration at the volume and run the stages in a
-   notebook cell:
+## The timezone detail worth knowing about
 
-   ```python
-   from datetime import date
-   from pathlib import Path
+Every cutoff and censoring boundary in this pipeline is a timestamp
+literal, parsed in the Spark session timezone. The local session pins
+that to UTC. The managed session does not: it follows the workspace, so
+a workspace on London time would move every boundary by an hour across a
+daylight saving change and quietly produce different numbers from the
+same code.
 
-   from olist_retention.config import DataConfig
-   from olist_retention.pipeline.session import build_spark_session
-   from olist_retention.pipeline.staging import RawToStaging
-   from olist_retention.pipeline.features import FeatureBuilder
-   from olist_retention.pipeline.survival import SurvivalDatasetBuilder
-   from olist_retention.config import SparkConfig
+`build_spark_session` now pins the session timezone on the Databricks
+path as well, and warns loudly if the runtime refuses. The equivalent bug
+was caught locally by a handcrafted censoring test whose window straddled
+a British summer time change, and it would have been invisible on a
+UTC-only machine.
 
-   base = Path("/Volumes/workspace/default/olist")
-   data = DataConfig(
-       raw_dir=base / "raw",
-       staging_dir=base / "staging",
-       features_dir=base / "features",
-       outputs_dir=base / "outputs",
-       kaggle_handle="olistbr/brazilian-ecommerce",
-   )
-   spark = build_spark_session(SparkConfig("ignored", "ignored", 16, "olist"))
+## Using S3 directly
 
-   RawToStaging(spark, data).run()
-   for cutoff in (date(2018, 1, 1), date(2018, 4, 1)):
-       FeatureBuilder(spark, data, cutoff, horizon_days=180).run()
-   SurvivalDatasetBuilder(spark, data, date(2018, 10, 17)).run()
-   ```
+On a standard Databricks-on-AWS workspace the only change is the paths.
+Grant the cluster access to the bucket through an instance profile or a
+Unity Catalog external location, then set the four directories to `s3://`
+URIs. Spark resolves the scheme through the Hadoop S3A connector, and no
+pipeline code refers to a filesystem directly.
 
-6. Register the staged parquet as tables and run `sql/feature_views.sql`
-   in the SQL editor (replace the temporary view names with table
-   references, or simply create the temp views in a notebook first):
+Two sizing notes carry over from the local configuration:
 
-   ```python
-   for name in ("customers", "orders", "order_items", "order_payments",
-                "order_reviews", "products", "sellers", "geolocation",
-                "category_translation"):
-       spark.read.parquet(f"{base}/staging/{name}").createOrReplaceTempView(name)
-   ```
-
-The same view definitions the test suite executes against Spark run
-unchanged here; that equivalence is the reason the SQL lives in one file.
-
-## Using S3 directly (paid AWS workspace)
-
-On a standard Databricks-on-AWS workspace the only change from the
-walkthrough above is the paths. Grant the cluster access to the bucket
-through an instance profile or a Unity Catalog external location, then
-set the four directories to `s3://` URIs. Spark resolves the scheme
-through the Hadoop S3A connector; none of the pipeline code refers to a
-filesystem directly.
-
-Two sizing notes worth carrying over from the local configuration:
-
-* `spark.sql.shuffle.partitions` stays small. The dataset is ~100k
-  orders; the 200-partition default exists for clusters processing far
-  more data and only adds scheduling overhead here.
+* `spark.sql.shuffle.partitions` stays small. The dataset is about a
+  hundred thousand orders; the 200-partition default exists for clusters
+  processing far more than that and only adds scheduling overhead here.
 * The feature snapshots are written as single parquet files on purpose.
   At this scale one file per snapshot reads faster than a directory of
-  shards; partitioning earns its keep at orders of magnitude more data.
+  shards. Partitioning earns its keep at orders of magnitude more data.
 
 ## Why the laptop run stays the default
 
 Everything in the README's results section is measured by the local run
 and re-verified in CI, neither of which needs an account with anyone.
-Databricks is the deployment story, not a dependency: the code is
-structured so an interviewer can ask "what changes at scale" and the
-answer is configuration, cluster sizing and nothing else.
+Databricks answers a different question, which is what changes when the
+data outgrows one machine, and the answer is configuration and cluster
+sizing.

@@ -30,11 +30,23 @@ dependencies = [
 spark = ["pyspark>=4.0,<4.3"]
 data = ["kagglehub>=0.3"]
 service = ["fastapi>=0.115", "uvicorn>=0.30", "pydantic>=2.8"]
+# The neural candidate is opt-in because the wheel is a quarter of a
+# gigabyte and only one of the three models needs it. Training says out
+# loud which candidates it compared, so a run without this extra is
+# readable from the metrics file rather than silently different.
+tf = [
+  "tensorflow-cpu>=2.20,<3; sys_platform != 'darwin'",
+  "tensorflow>=2.20,<3; sys_platform == 'darwin'",
+]
+# boto3 only. The service reads its model from S3 and writes a handful of
+# CloudWatch metrics; neither needs anything heavier.
+aws = ["boto3>=1.35"]
 dev = [
-  "olist-retention[spark,data,service]",
+  "olist-retention[spark,data,service,aws]",
   "pytest>=8.2",
   "ruff==0.15.22",  # must match .github/workflows/ci.yml
   "httpx>=0.27",
+  "moto[s3,cloudwatch]>=5.0",
   "statsmodels>=0.14",
   "nbformat>=5.10",
   "nbclient>=0.10",

@@ -28,3 +28,6 @@ dist/
 .Rproj.user/
 *.asv
 octave-workspace
+
+# Written by deploy/aws/bootstrap.py: instance ids and the bucket in use.
+deploy/aws/.stack-state.json

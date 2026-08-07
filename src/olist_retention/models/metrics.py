@@ -108,7 +108,7 @@ def save_evaluation_plots(
 def _reliability(
     y_true: np.ndarray, scores: np.ndarray, n_bins: int
 ) -> tuple[np.ndarray, np.ndarray]:
-    """Reliability curve on score-quantile bins, robust to skewed scores."""
+    """Reliability curve on score-quantile bins, stable under skewed scores."""
     quantiles = np.quantile(scores, np.linspace(0, 1, n_bins + 1))
     quantiles[-1] += 1e-9
     bins = np.clip(np.digitize(scores, quantiles) - 1, 0, n_bins - 1)

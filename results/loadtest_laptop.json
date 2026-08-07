@@ -1,0 +1,19 @@
+{
+  "url": "http://127.0.0.1:8079/v1/score",
+  "traffic_drawn_from_reference": true,
+  "concurrency": 8,
+  "batch_size": 100,
+  "duration_seconds": 15.2,
+  "requests_completed": 549,
+  "requests_failed": 0,
+  "rows_scored": 54900,
+  "requests_per_second": 36.1,
+  "rows_per_second": 3610.9,
+  "latency_ms": {
+    "mean": 205.76,
+    "p50": 204.86,
+    "p95": 317.18,
+    "p99": 356.64,
+    "max": 393.05
+  }
+}

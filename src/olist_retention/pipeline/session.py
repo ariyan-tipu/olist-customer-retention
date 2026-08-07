@@ -43,7 +43,22 @@ def build_spark_session(config: SparkConfig) -> SparkSession:
     """Return an active Spark session appropriate for the environment."""
     if on_databricks():
         logger.info("Databricks runtime detected, attaching to the managed session")
-        return SparkSession.builder.getOrCreate()
+        session = SparkSession.builder.getOrCreate()
+        # Cluster sizing is the runtime's business and is left alone. The
+        # session timezone is not: every cutoff and censoring boundary is
+        # a timestamp literal parsed in it, so a workspace defaulting to
+        # anything other than UTC would silently move the boundaries and
+        # produce different numbers from the same code. It is pinned here
+        # for the same reason it is pinned in the local branch below.
+        try:
+            session.conf.set("spark.sql.session.timeZone", "UTC")
+        except Exception as error:  # noqa: BLE001 - depends on the runtime
+            logger.warning(
+                "Could not pin the session timezone to UTC (%s). Cutoff boundaries "
+                "may differ from a local run.",
+                error,
+            )
+        return session
 
     session = (
         SparkSession.builder.master(config.master)

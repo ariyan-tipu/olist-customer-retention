@@ -69,3 +69,21 @@ def test_unknown_fields_are_rejected(trained_model):
 def test_empty_batch_is_rejected(trained_model):
     client = TestClient(create_app(model_path=str(trained_model.model_path)))
     assert client.post("/v1/score", json={"customers": []}).status_code == 422
+
+
+def test_non_finite_features_are_rejected_with_a_useful_message(trained_model):
+    """NaN travels the whole pipeline and fails at response serialisation.
+
+    Catching it at the boundary turns a 500 that names nothing into a 422
+    that names the field. The load generator found this by sending one.
+    """
+    client = TestClient(create_app(model_path=str(trained_model.model_path)))
+    for bad in ("NaN", "Infinity", "-Infinity"):
+        response = client.post(
+            "/v1/score",
+            content=f'{{"customers": [{{"recency_days": {bad}}}]}}',
+            headers={"Content-Type": "application/json"},
+        )
+        assert response.status_code == 422, bad
+        assert "recency_days" in response.text
+        assert "finite" in response.text

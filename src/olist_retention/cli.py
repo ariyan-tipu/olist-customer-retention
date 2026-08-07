@@ -27,6 +27,7 @@ def main(argv: list[str] | None = None) -> int:
         "synthetic": _run_synthetic,
         "pipeline": _run_pipeline,
         "train": _run_train,
+        "publish": _run_publish,
         "power": _run_power,
         "serve": _run_serve,
     }[args.command]
@@ -62,7 +63,23 @@ def _build_parser() -> argparse.ArgumentParser:
         "--skip-validation", action="store_true", help="Skip the raw data validation report"
     )
 
-    commands.add_parser("train", help="Train, compare and persist the churn models")
+    train = commands.add_parser(
+        "train", help="Compare the churn model candidates and persist the winner"
+    )
+    train.add_argument(
+        "--no-keras",
+        action="store_true",
+        help="Leave the neural candidate out even when TensorFlow is installed",
+    )
+
+    publish = commands.add_parser(
+        "publish", help="Upload the trained artefact to S3 for the deployed service"
+    )
+    publish.add_argument("--bucket", required=True, help="Target S3 bucket name")
+    publish.add_argument(
+        "--prefix", default="models", help="Key prefix inside the bucket (default: models)"
+    )
+    publish.add_argument("--profile", default=None, help="Named AWS profile to authenticate with")
 
     power = commands.add_parser("power", help="Run the A/B test power analysis")
     power.add_argument(
@@ -126,9 +143,20 @@ def _run_train(args: argparse.Namespace, config: PipelineConfig) -> int:
         features_dir=config.data.features_dir,
         outputs_dir=config.data.outputs_dir,
         horizon_days=config.labelling.horizon_days,
+        include_keras=not args.no_keras,
     )
     result = trainer.run(config.labelling.train_cutoff, config.labelling.test_cutoff)
     logger.info("Winner: %s (metrics at %s)", result.winner, result.metrics_path)
+    return 0
+
+
+def _run_publish(args: argparse.Namespace, config: PipelineConfig) -> int:
+    from olist_retention.artefacts.s3 import ArtefactStore
+
+    store = ArtefactStore(bucket=args.bucket, prefix=args.prefix, profile=args.profile)
+    published = store.publish(config.service.model_path)
+    logger.info("Published %s", published.uri)
+    logger.info("Point the service at it with OLIST_MODEL_S3_URI=%s", published.uri)
     return 0
 
 

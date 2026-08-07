@@ -109,8 +109,8 @@ smallest extreme value distribution. The MATLAB script
 (`analysis/matlab/weibull_mle_check.m`) writes the censored log-likelihood
 out from first principles
 
-* event: log f(t) = z - exp(z) - log(sigma) - log(t)
-* censored: log S(t) = -exp(z), with z = (log t - Xb) / sigma
+* event: `log f(t) = z - exp(z) - log(sigma) - log(t)`
+* censored: `log S(t) = -exp(z)`, with `z = (log t - Xb) / sigma`
 
 and maximises it numerically with `fminsearch`, with no statistics
 toolbox involved. On the real export:

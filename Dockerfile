@@ -17,9 +17,12 @@ LABEL org.opencontainers.image.title="olist-retention-scoring" \
 RUN useradd --create-home --uid 1000 scorer
 WORKDIR /app
 
+# The aws extra is boto3 alone. It lets the same image either take a
+# mounted model or pull one from S3 at boot, which is what keeps the
+# local run and the deployed run on identical code.
 COPY --from=build /dist/*.whl /tmp/
 RUN WHEEL=$(ls /tmp/*.whl) \
-    && pip install --no-cache-dir "${WHEEL}[service]" \
+    && pip install --no-cache-dir "${WHEEL}[service,aws]" \
     && rm -rf /tmp/*.whl
 
 ENV OLIST_MODEL_PATH=/models/churn_model.joblib
