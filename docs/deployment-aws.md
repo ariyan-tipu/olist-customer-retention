@@ -39,6 +39,13 @@ six months lands near 55 USD against 100 to 200 USD of credits.
 * A trained model at `models/churn_model.joblib`, which means
   `olist-retention train` has been run at least once.
 
+## The live instance
+
+Deployed 2026-08-07 in eu-west-2 and answering at
+<http://35.178.111.113/readyz>. Measurements taken from it are in
+[../results/serving-capacity.md](../results/serving-capacity.md), which
+is what keeps the claim checkable after the Free plan closes the account.
+
 ## Deploy
 
 ```bash

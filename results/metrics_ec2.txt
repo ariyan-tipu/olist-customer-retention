@@ -1,0 +1,36 @@
+# HELP olist_score_requests_total Scoring requests served since process start.
+# TYPE olist_score_requests_total counter
+olist_score_requests_total 4843.0
+# HELP olist_score_rows_total Customer rows scored since process start.
+# TYPE olist_score_rows_total counter
+olist_score_rows_total 484202.0
+# HELP olist_score_latency_milliseconds Scoring latency over the recent window.
+# TYPE olist_score_latency_milliseconds gauge
+olist_score_latency_milliseconds{quantile="p50"} 35.998
+olist_score_latency_milliseconds{quantile="p95"} 72.816
+olist_score_latency_milliseconds{quantile="p99"} 125.821
+# HELP olist_feature_drift_psi Population stability index per feature.
+# TYPE olist_feature_drift_psi gauge
+olist_feature_drift_psi{feature="recency_days"} 0.006682
+olist_feature_drift_psi{feature="avg_delivery_delay_days"} 0.00568
+olist_feature_drift_psi{feature="top_category"} 0.005325
+olist_feature_drift_psi{feature="monetary_avg"} 0.005282
+olist_feature_drift_psi{feature="avg_transit_days"} 0.004785
+olist_feature_drift_psi{feature="avg_basket_price"} 0.004386
+olist_feature_drift_psi{feature="tenure_days"} 0.003298
+olist_feature_drift_psi{feature="min_review_score"} 0.003053
+olist_feature_drift_psi{feature="monetary_total"} 0.002883
+olist_feature_drift_psi{feature="customer_region"} 0.002599
+olist_feature_drift_psi{feature="avg_freight_share"} 0.001696
+olist_feature_drift_psi{feature="max_delivery_delay_days"} 0.001635
+olist_feature_drift_psi{feature="n_distinct_categories"} 0.001599
+olist_feature_drift_psi{feature="avg_installments"} 0.001206
+olist_feature_drift_psi{feature="avg_review_score"} 0.000912
+olist_feature_drift_psi{feature="avg_items_per_order"} 7.8e-05
+olist_feature_drift_psi{feature="n_payment_methods"} 6.8e-05
+# HELP olist_feature_drift_psi_max Largest index across monitored features.
+# TYPE olist_feature_drift_psi_max gauge
+olist_feature_drift_psi_max 0.006682
+# HELP olist_model_info Loaded model, as a label on a constant.
+# TYPE olist_model_info gauge
+olist_model_info{model_name="logistic_regression"} 1

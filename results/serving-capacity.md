@@ -41,7 +41,7 @@ Put in terms of the dataset: the full out-of-time cohort of 64,089
 customers scores in under a second at the largest batch size, and takes
 about seventeen minutes one row at a time.
 
-## Under concurrent load
+## Under concurrent load, on the laptop
 
 Eight concurrent clients, 20 seconds, 100 customers per request, against
 the service on the same laptop:
@@ -64,6 +64,67 @@ Reproduce with:
 olist-retention serve
 py scripts/loadtest.py http://127.0.0.1:8000/ --concurrency 8 --seconds 20 --batch-size 100
 ```
+
+## On the deployed instance
+
+EC2 `t3.micro` in eu-west-2, Ubuntu 24.04, one uvicorn worker behind
+nginx, model pulled from S3 at boot. Driven from a UK home connection, so
+these figures carry a real network path rather than a loopback.
+
+Four concurrent clients, 60 seconds, 100 customers per request:
+
+```
+requests completed   1,772      failed   0
+rows scored          177,200
+requests per second  29.5
+rows per second      2,951
+latency  p50 94.9 ms   p95 176.1 ms   p99 295.3 ms
+```
+
+The service's own window over the same period, which excludes the network
+entirely: p50 36.0 ms, p95 72.8 ms, p99 125.8 ms. The gap between the two
+is the round trip, and separating them is the reason the service measures
+itself rather than relying on the client's view.
+
+Raising concurrency to eight buys throughput and costs tail latency,
+which is the trade this instance size makes:
+
+| Clients | Rows per second | p50 | p99 | Failed |
+| ------- | --------------- | --- | --- | ------ |
+| 4       | 2,951           | 94.9 ms | 295.3 ms | 0 |
+| 8       | 3,266           | 183.4 ms | 629.1 ms | 0 |
+
+Four is the operating point worth quoting: it holds 90% of the throughput
+at less than half the tail.
+
+Drift across the whole exercise, 484,202 rows scored on the instance:
+maximum index 0.0067 on `recency_days`, nothing material, which is what
+it should read when the traffic is drawn from the model's own reference.
+
+Seven metrics reach CloudWatch every minute and were confirmed arriving:
+`RowsScored`, `RequestsServed`, `LatencyP50`, `LatencyP95`, `LatencyP99`,
+`MaxFeaturePSI` and `MaterialDriftFeatures`.
+
+## Connection reuse was worth five times the throughput
+
+The first run against the instance opened a fresh TCP connection per
+request. It produced 24 failures and a flat three second step at the
+95th and 99th percentiles, and the step did not move when concurrency
+dropped from eight clients to two. A tail that ignores load is not
+queuing. The service's own window read 11 ms at the median throughout,
+which placed the three seconds outside the process: a lost handshake
+retransmitting on the way out.
+
+Holding one connection open per client, changing nothing else:
+
+| | Rows per second | p99 | Failed |
+| --- | --- | --- | --- |
+| New connection per request | 611 | 3,185 ms | 4 |
+| One connection held open | 2,935 | 234 ms | 0 |
+
+Five times the throughput, an order of magnitude off the tail, and no
+failures. Real callers keep connections alive, so the original numbers
+were measuring something nobody would ever do.
 
 ## The load generator has to look like the training data
 

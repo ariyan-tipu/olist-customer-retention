@@ -20,8 +20,9 @@ as what the data supports rather than worked around. The most useful
 finding is a negative one, and it is in the table below.
 
 Everything needed to reproduce the results runs on a laptop for nothing.
-The deployment targets an AWS Free plan account, which cannot be charged;
-[docs/deployment-aws.md](docs/deployment-aws.md) covers what that means
+The scorer is deployed on an AWS Free plan account, which cannot be
+charged: **<http://35.178.111.113/readyz>**, with
+[docs/deployment-aws.md](docs/deployment-aws.md) covering what that means
 and how to take it down. Paths are configuration rather than constants,
 so the same jobs run against a Databricks volume or an S3 prefix without
 a code change, and
@@ -253,17 +254,32 @@ curl -s http://127.0.0.1:8000/metrics         # the same, for a Prometheus scrap
 ```
 
 The `/metrics` endpoint speaks the Prometheus text format because it is
-the one every monitoring stack can already read. On an instance deployed
-by `deploy/aws/bootstrap.py`, seven of those numbers also reach
-CloudWatch once a minute, which is where an alarm would hang if this were
-carrying real customers. Seven is a deliberate ceiling: ten custom
-metrics are free indefinitely, so the monitoring cannot turn into a bill.
+the one every monitoring stack can already read. Seven of those numbers
+also reach CloudWatch once a minute from the deployed instance, which is
+where an alarm would hang if this were carrying real customers. Seven is
+a deliberate ceiling: ten custom metrics are free indefinitely, so the
+monitoring cannot turn into a bill. Across 484,202 rows scored on the
+instance the maximum index read 0.0067, with nothing material, which is
+what it should say when the traffic matches the model's reference.
 
-**Capacity.** [`scripts/loadtest.py`](scripts/loadtest.py) drives the
-service with concurrent clients and reports throughput with the latency
-spread that came with it. Volume is not traffic, and a dataset of 99,441
-orders says nothing about how a service behaves under load, so the
-capacity figures come from measurement.
+**Capacity.** Volume is not traffic, and a dataset of 99,441 orders says
+nothing about how a service behaves under load, so
+[`scripts/loadtest.py`](scripts/loadtest.py) drives the deployed instance
+and measures it. On a `t3.micro` in London, four concurrent clients
+sending batches of a hundred: **2,951 rows a second, no failures, 94.9 ms
+median and 295.3 ms at the 99th percentile**, across a real network path
+from a home connection. The service's own window over the same period
+reads 36.0 ms median and 125.8 ms at the 99th, and the difference between
+the two numbers is the round trip.
+
+Two findings came out of measuring rather than assuming. The model is
+0.19 ms of a 13 ms call and feature transformation is the rest, so
+throughput scales with batch size from 63 rows a second at one row to
+74,827 at a thousand. And opening a fresh connection per request cost
+five times the throughput and put a flat three second step in the tail
+that did not move with load, which the service's own latency window
+placed outside the process. Both are in
+[results/serving-capacity.md](results/serving-capacity.md).
 
 The deployment itself is one script that builds the stack and one that
 removes it, both in [`deploy/aws/`](deploy/aws), with the runbook and the

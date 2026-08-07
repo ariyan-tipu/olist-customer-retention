@@ -1,0 +1,19 @@
+{
+  "url": "http://35.178.111.113/v1/score",
+  "traffic_drawn_from_reference": true,
+  "concurrency": 4,
+  "batch_size": 100,
+  "duration_seconds": 60.05,
+  "requests_completed": 1772,
+  "requests_failed": 0,
+  "rows_scored": 177200,
+  "requests_per_second": 29.5,
+  "rows_per_second": 2950.7,
+  "latency_ms": {
+    "mean": 105.78,
+    "p50": 94.9,
+    "p95": 176.14,
+    "p99": 295.32,
+    "max": 1211.28
+  }
+}

@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 import urllib.request
@@ -270,7 +271,10 @@ class Stack:
         }
         for placeholder, value in replacements.items():
             text = text.replace(placeholder, value)
-        remaining = [line for line in text.splitlines() if "@@" in line]
+        # Matching the placeholder shape rather than a bare "@@", which
+        # the script's own header comment contains while explaining what
+        # the placeholders are.
+        remaining = re.findall(r"@@[A-Z_]+@@", text)
         if remaining:
             raise SystemExit(f"Unfilled placeholder in user data: {remaining[0]}")
         self.state["model_s3_uri"] = model_uri

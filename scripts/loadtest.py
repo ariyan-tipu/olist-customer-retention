@@ -20,6 +20,8 @@ gets paged about.
 from __future__ import annotations
 
 import argparse
+import contextlib
+import http.client
 import json
 import math
 import random
@@ -27,11 +29,9 @@ import statistics
 import sys
 import threading
 import time
-import urllib.error
-import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 DEFAULT_PROFILE = Path("models/model_card.json")
 FALLBACK_REGIONS = ("sudeste", "nordeste", "sul", "norte", "centro_oeste")
@@ -153,21 +153,49 @@ def worker(
     timeout: float,
     profile: TrafficProfile,
 ) -> None:
+    """One client, holding one connection open for its whole run.
+
+    Reusing the connection matters more than it looks. An earlier version
+    opened a fresh one per request, and against a service on another
+    continent that put a flat three second step in the tail at every
+    concurrency level, including two clients, while the service's own
+    latency window showed 11 ms. That was a lost handshake retransmitting,
+    so the measurement was of connection setup rather than of scoring.
+    Real callers keep connections alive, and now so does this.
+    """
     rng = random.Random(rng_seed)
+    parsed = urlsplit(url)
+    path = parsed.path or "/"
+    headers = {"Content-Type": "application/json", "Connection": "keep-alive"}
+
+    def connect() -> http.client.HTTPConnection:
+        if parsed.scheme == "https":
+            return http.client.HTTPSConnection(parsed.netloc, timeout=timeout)
+        return http.client.HTTPConnection(parsed.netloc, timeout=timeout)
+
+    connection = connect()
     while time.monotonic() < deadline:
         batch = {"customers": [profile.row(rng) for _ in range(batch_size)]}
         payload = json.dumps(batch).encode("utf-8")
-        request = urllib.request.Request(
-            url, data=payload, headers={"Content-Type": "application/json"}
-        )
         started = time.perf_counter()
         try:
-            with urllib.request.urlopen(request, timeout=timeout) as response:
-                response.read()
-        except (urllib.error.URLError, TimeoutError, OSError):
+            connection.request("POST", path, body=payload, headers=headers)
+            response = connection.getresponse()
+            response.read()
+            if response.status >= 400:
+                results.fail()
+                continue
+        except (http.client.HTTPException, TimeoutError, OSError):
             results.fail()
+            # A broken connection cannot be reused, so this client takes
+            # a fresh one rather than failing for the rest of the run.
+            with contextlib.suppress(OSError):
+                connection.close()
+            connection = connect()
             continue
         results.record((time.perf_counter() - started) * 1000.0, batch_size)
+
+    connection.close()
 
 
 def percentile(ordered: list[float], fraction: float) -> float:
