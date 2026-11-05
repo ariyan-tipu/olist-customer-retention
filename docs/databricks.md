@@ -60,7 +60,7 @@ a managed Unity Catalog volume; on a workspace with its own bucket the
 only difference is the path prefix.
 
 1. Sign up for Free Edition and let it create a workspace.
-2. Open Catalog, expand the `workspace` catalog and the `default` schema,
+2. Open Catalog, expand `workspace` and its `default` schema,
    then create a volume named `olist`. The path comes out as
    `/Volumes/workspace/default/olist`.
 3. Import `notebooks/databricks/01_pipeline_on_databricks.py`. Databricks

@@ -12,7 +12,7 @@
 # survival machinery uses exactly the information they do carry.
 #
 # Inputs:  the survival dataset exported by the Spark pipeline.
-# Outputs: Kaplan-Meier plots, Cox hazard ratios with diagnostics, and a
+# Outputs: Kaplan-Meier plots; Cox hazard ratios with diagnostics; a
 #          Weibull AFT fit whose parameters are exported so the MATLAB
 #          script can re-derive them by direct likelihood maximisation.
 #

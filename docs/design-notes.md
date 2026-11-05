@@ -45,7 +45,7 @@ the default creates hundreds of near-empty tasks whose scheduling overhead
 dominates. The reused purchase spine is cached once, deliberately, and
 everything else stays lazy so Spark can collapse the plan. Snapshots are
 written as single parquet files because partitioning below a few million rows
-is bookkeeping, not performance.
+adds bookkeeping and buys no speed.
 
 ## Evaluation under a 1% base rate
 
@@ -79,7 +79,7 @@ delivery and bad reviews stretch the time to the next purchase), R must recover
 both directions significantly, and Octave must reproduce R's fit from the raw
 likelihood, on every push.
 
-## SQL that is proven, not decorative
+## SQL that is tested
 
 The Databricks SQL views in `sql/` execute against Spark temporary views inside
 the test suite, so a broken view fails the build rather than a dashboard.

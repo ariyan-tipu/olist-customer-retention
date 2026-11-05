@@ -101,7 +101,7 @@ Because the shape parameter of the Weibull fit below is under one
 most likely to return in the weeks right after a delivery, and the
 propensity decays from there. Win-back activity has a natural clock.
 
-## The MATLAB validation: proving the likelihood, not trusting it
+## The MATLAB validation: the likelihood by hand
 
 R's `survreg` fits an accelerated failure time model,
 log(T) = b0 + b1 late + b2 low_review + sigma W, with W following the
@@ -127,7 +127,7 @@ Mapped through the shape parameter, those coefficients imply hazard
 ratios of 0.790 for late delivery and 0.770 for a low review, consistent
 with the Cox estimates from the richer model. The same script runs in
 GNU Octave in CI on synthetic data with planted effects, so the
-agreement is re-proven on every push, not just once on a laptop.
+agreement is checked again on every push.
 
 ## Limitations
 
@@ -135,8 +135,8 @@ agreement is re-proven on every push, not just once on a laptop.
   for a few thousand customers and could support a recurrent-events
   model.
 * The review score is the first order's final review, which usually
-  arrives days after delivery. This analysis is explanatory, not a
-  scoring model, so that timing is acceptable here and is deliberately
+  arrives days after delivery. This analysis is explanatory and is never
+  used to score customers, so that timing is acceptable here and is deliberately
   not mirrored in the classifier's features.
 * Order status is a snapshot, so a small number of late status changes
   are invisible.

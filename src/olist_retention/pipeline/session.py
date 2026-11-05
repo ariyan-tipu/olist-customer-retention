@@ -3,7 +3,7 @@
 The same entry point serves both environments. On Databricks the runtime
 already owns the session and cluster sizing, so the function attaches to it
 and leaves the configuration alone. Locally it builds a session sized for a
-laptop: two cores, a small driver heap, no web UI, and a shuffle partition
+laptop: two cores, a small driver heap, no web UI and a shuffle partition
 count matched to the data volume rather than the cluster-scale default.
 """
 

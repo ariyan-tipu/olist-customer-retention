@@ -16,7 +16,7 @@ because reasoning about Type I and Type II error is the point:
 
 The closed-form sizes use the standard normal approximation with pooled
 variance under the null. A Monte Carlo simulation then checks the algebra
-by measuring both error rates empirically; the unit tests additionally
+by measuring both error rates empirically; the unit tests also
 cross-check against statsmodels.
 """
 

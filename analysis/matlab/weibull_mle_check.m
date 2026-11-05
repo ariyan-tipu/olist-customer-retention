@@ -1,6 +1,6 @@
 % Cross-check of R's Weibull AFT survival fit by direct maximum likelihood.
 %
-% Purpose: prove the survreg() result is understood, not just trusted.
+% Purpose: reproduce the survreg() result from the likelihood itself.
 % The censored Weibull log-likelihood is written out from first principles
 % and maximised numerically with fminsearch; the estimates must agree with
 % R's Newton-Raphson fit to tight tolerances or this script fails.

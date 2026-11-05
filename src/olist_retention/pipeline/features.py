@@ -7,7 +7,7 @@ of the value of the module, so the rules are spelled out:
 
 * Purchases count towards recency, frequency and monetary features when
   they were placed before the cutoff.
-* Delivery features additionally require the parcel to have arrived by the
+* Delivery features also require the parcel to have arrived by the
   cutoff. An order still in transit has no known delay yet.
 * Review features require the review to have been written by the cutoff.
 * The label window is strictly after the cutoff: ``(cutoff, cutoff + H]``.

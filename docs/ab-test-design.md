@@ -22,7 +22,7 @@ first orders to a faster carrier service.
 * **Primary metric:** repeat purchase within 180 days of the first
   delivery, a binary outcome per customer, matching the label the rest
   of the project models.
-* **Baseline:** measured, not guessed. The 2018-04-01 feature snapshot
+* **Baseline:** measured from the data. The 2018-04-01 feature snapshot
   puts the 180 day repeat rate at **0.9752%**.
 * **Test:** two-proportion z-test with pooled variance, two-sided at
   alpha = 0.05, target power 0.80.

@@ -9,7 +9,7 @@ tables, with all the mess that implies. The pipeline is PySpark, the
 models are scikit-learn and Keras, the statistics engine is R's
 `survival` package, and MATLAB re-derives the key fit from the raw
 likelihood as a validation step. The trained model is served by a FastAPI
-application that reads it from S3, reports its own latency, and measures
+application that reads it from S3, reports its own latency and measures
 whether the customers it is being asked about still look like the ones it
 was fitted on.
 
@@ -65,8 +65,8 @@ reading noise.
 
 The out-of-time snapshot then ranked the network last on ROC-AUC, at
 0.577 against 0.652 for gradient boosting. It was also measured for what
-it costs to run: **402 MB of resident memory against 90 MB**, and **33 ms
-per scoring request against roughly 1 ms**, because TensorFlow has to be
+it costs to run: 402 MB of resident memory against 90 MB, and 33 ms
+per scoring request against roughly 1 ms, because TensorFlow has to be
 in the serving image at all.
 
 So the selection rule carries a tie-break, in
@@ -303,7 +303,7 @@ transit across the cutoff. Those tests caught a real bug: naive datetime
 literals crossed a British daylight-saving change and moved every boundary
 by an hour, which a UTC-only CI machine would never have seen.
 
-**Ranking, not probability.** Class weighting makes the scores rank well
+**Scores are for ranking.** Class weighting makes the scores rank well
 and destroys calibration, so the service's outputs are treated as rankings
 and recalibration is the stated next step.
 
@@ -368,7 +368,7 @@ been proved is that it detects a shift when one is present, which the
 test suite pins by moving a feature and checking the index reports it,
 and which [results/serving-capacity.md](results/serving-capacity.md)
 records happening for real. Making this carry real customers would mean
-TLS behind a domain, more than one instance, and an alarm on the drift
+TLS behind a domain, more than one instance and an alarm on the drift
 metric wired to a retraining job. Each of those is an addition to this
 design rather than a rewrite, and each also costs money, which is where
 the free tier stops.
